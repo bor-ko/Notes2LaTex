@@ -23,11 +23,11 @@ Pick an engine with `--engine ollama|claude|offline` (CLI) or the **Engine** men
 
 | Engine | Cost | Setup | Speed |
 |---|---|---|---|
-| `ollama` (**default**) | free, runs on your Mac | Ollama app running + `ollama pull qwen3-vl:8b-instruct` (6.2 GB) | ~3 s per line once loaded |
+| `ollama` (**default**) | free, runs on your Mac | Ollama app running + `ollama pull qwen3-vl:8b-instruct` (6.2 GB) | a few minutes per dense page; slower when the Mac is short on memory |
 | `claude` | about $0.05–0.10 per page (Opus) | `ANTHROPIC_API_KEY=...` in `.env`; `NOTES2TEX_MODEL=claude-haiku-5-5` is ~1/40 of the price | one request per page |
 | `offline` | free | none: you type the LaTeX in the review screen | instant |
 
-The local engine reads **one line at a time** (small models are much more reliable on a single line than a whole page) and gets the previous lines as context. `NOTES2TEX_LOCAL_MODE=page` sends the whole page instead, `NOTES2TEX_LOCAL_MODEL` picks another Ollama model, and `NOTES2TEX_ENGINE` changes the default engine.
+The local engine reads the page **five lines at a time**, stacked into one numbered strip image, with the previous lines as context. Small models are far more reliable on a few lines than on a whole page, and vision models scale every small image up to a minimum size (~1000 tokens), so one strip of five lines costs about what a single line would. `NOTES2TEX_LOCAL_BATCH` changes the lines per strip, `NOTES2TEX_LOCAL_MODE=page` sends the whole page instead, `NOTES2TEX_LOCAL_MODEL` picks another Ollama model, and `NOTES2TEX_ENGINE` changes the default engine.
 
 Every engine's output goes through a deterministic tidy-up (`backend/notes2tex/tidy.py`) before you see it. It repairs backslashes a model forgot to escape (`\to` arriving as a tab), fixes garbled č/š/ž, strips handwritten labels like "Def:", "Primer" or "Dokaz" (keeping a name, so "Def (Homotopy):" becomes `\begin{definition}[Homotopy]`), wraps the maths in text lines in `$...$`, removes stray display delimiters, and drops TeX commands that have no place in a transcription (`\def`, `\input`, `\write`, …).
 

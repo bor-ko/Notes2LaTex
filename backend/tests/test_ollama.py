@@ -42,43 +42,59 @@ def _transcriber(client, **kw):
     return OllamaTranscriber(model="qwen3-vl:8b-instruct", host="http://ollama.test", client=client, **kw)
 
 
-def test_line_mode_sends_one_crop_per_line_with_context():
+def L(role, latex, cont=False):
+    return {"role": role, "latex": latex, "continues_previous": cont}
+
+
+def test_lines_are_batched_with_context():
     seen = []
     client = fake_ollama(
         [
-            {"role": "heading", "latex": "Kinematics", "continues_previous": False, "code_language": None},
-            {"role": "derivation", "latex": "v &= \\frac{\\dd x}{\\dd t}", "continues_previous": False, "code_language": None},
-            {"role": "derivation", "latex": "a &= \\dot v", "continues_previous": True, "code_language": None},
+            {"lines": [L("heading", "Kinematics"), L("derivation", "v &= \\frac{\\dd x}{\\dd t}")]},
+            {"lines": [L("derivation", "a &= \\dot v", True)]},
         ],
         seen=seen,
     )
-    result = _transcriber(client).transcribe_page(_page(), load_subject("math"))
+    result = _transcriber(client, batch=2).transcribe_page(_page(3), load_subject("math"))
     assert [b.role for b in result.blocks] == ["heading", "derivation", "derivation"]
     assert [b.continues_previous for b in result.blocks] == [False, False, True]
-    assert len(seen) == 3 and all(len(r["messages"][1]["images"]) == 1 for r in seen)
-    assert seen[0]["format"]["properties"]["role"]["enum"][0] == "heading"  # schema-constrained output
-    assert seen[0]["options"]["temperature"] == 0
-    assert "first line" in seen[0]["messages"][1]["content"]
-    assert "[derivation] v &=" in seen[2]["messages"][1]["content"]  # previous lines as context
+    assert len(seen) == 2 and [len(r["messages"][1]["images"]) for r in seen] == [1, 1]  # one strip per batch
+    assert "numbered 1-2" in seen[0]["messages"][1]["content"]
+    assert seen[0]["format"]["properties"]["lines"]["type"] == "array"  # schema-constrained output
+    assert seen[0]["options"]["temperature"] == 0 and seen[0]["options"]["num_ctx"] == 4096
+    assert "start of the page" in seen[0]["messages"][1]["content"]
+    assert "[derivation] v &=" in seen[1]["messages"][1]["content"]  # previous lines as context
     assert "Vectors are written" in seen[0]["messages"][0]["content"]  # subject style rules
-    assert result.usage["requests"] == 3 and result.model == "ollama:qwen3-vl:8b-instruct"
+    assert "Slovenian" in seen[0]["messages"][0]["content"]  # language of the notes
+    assert result.usage["requests"] == 2 and result.model == "ollama:qwen3-vl:8b-instruct"
+
+
+def test_wrong_number_of_answers_falls_back_to_one_by_one():
+    seen = []
+    client = fake_ollama(
+        [
+            {"lines": [L("prose", "only one")]},  # asked for 2
+            {"lines": [L("prose", "first")]},
+            {"lines": [L("prose", "second", True)]},
+        ],
+        seen=seen,
+    )
+    result = _transcriber(client, batch=2).transcribe_page(_page(2), load_subject("math"))
+    assert [b.latex for b in result.blocks] == ["first", "second"]
+    assert len(seen) == 3  # one strip, then each line on its own
+    assert any("got 1 answers for 2 lines" in w for w in result.warnings)
 
 
 def test_continuation_with_a_different_role_starts_a_new_element():
-    client = fake_ollama(
-        [
-            {"role": "prose", "latex": "Therefore", "continues_previous": False, "code_language": None},
-            {"role": "equation", "latex": "x = 1", "continues_previous": True, "code_language": None},
-        ]
-    )
-    result = _transcriber(client).transcribe_page(_page(2), load_subject("math"))
+    client = fake_ollama([{"lines": [L("prose", "Therefore"), L("equation", "x = 1", True)]}])
+    result = _transcriber(client, batch=5).transcribe_page(_page(2), load_subject("math"))
     assert result.blocks[1].continues_previous is False
 
 
 def test_invalid_json_is_retried_then_reported_per_line():
-    good = {"role": "prose", "latex": "ok", "continues_previous": False, "code_language": None}
+    good = {"lines": [L("prose", "ok")]}
     client = fake_ollama(["not json", good, "nope", "still not json", good])
-    result = _transcriber(client).transcribe_page(_page(3), load_subject("math"))
+    result = _transcriber(client, batch=1).transcribe_page(_page(3), load_subject("math"))
     assert [b.latex for b in result.blocks] == ["ok", "", "ok"]  # line 2 failed twice
     assert any(w.startswith("line 2:") for w in result.warnings)
 
@@ -104,3 +120,11 @@ def test_page_mode_uses_numbered_overlay():
     assert len(seen) == 1 and "2 numbered boxes" in seen[0]["messages"][1]["content"]
     assert result.blocks[0].latex == "Waves" and result.blocks[1].latex == ""
     assert any("block 2 missing" in w for w in result.warnings)
+
+
+def test_strip_stacks_numbered_lines():
+    page = _page(3)
+    strip = page.strip([0, 1, 2])
+    lines = [page.line(i, pad=10) for i in range(3)]
+    assert strip.height == sum(c.height for c in lines) + 2 * 14
+    assert strip.width == 60 + max(c.width for c in lines)

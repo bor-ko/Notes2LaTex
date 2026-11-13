@@ -25,6 +25,7 @@ if not OLLAMA_HOST.startswith("http"):
     OLLAMA_HOST = "http://" + OLLAMA_HOST
 LOCAL_MODEL = os.environ.get("NOTES2TEX_LOCAL_MODEL", "qwen3-vl:8b-instruct")
 LOCAL_MODE = os.environ.get("NOTES2TEX_LOCAL_MODE", "line")  # line | page
+LOCAL_BATCH = int(os.environ.get("NOTES2TEX_LOCAL_BATCH", "5"))  # lines per request in line mode
 
 # Claude engine (paid API)
 MODEL = os.environ.get("NOTES2TEX_MODEL", "claude-opus-5-5")

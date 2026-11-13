@@ -1,10 +1,14 @@
 """Free, local transcription with a vision model served by Ollama.
 
-Small local models read a single line far more reliably than a whole page, so
-by default every line crop is sent on its own, together with the LaTeX of the
-lines just above it for context (which also lets the model decide whether the
-line continues the previous element). `mode="page"` sends the numbered page
-in one request like the Claude engine does, for comparison.
+Small local models read single lines far more reliably than a whole page, so
+by default the page is sent as line crops, a few consecutive lines per request
+(`LOCAL_BATCH`, default 5) stacked into one numbered strip image, together
+with the LaTeX of the lines just above for context. Vision models scale every
+small image up to a minimum size (~1000 tokens), so a strip of five lines
+costs about what one line alone would; seeing neighbouring lines together also
+helps the model read words. A batch whose answer has the wrong number of
+entries is retried one line at a time.
+`mode="page"` sends the numbered page in one request like the Claude engine.
 """
 
 from __future__ import annotations
@@ -26,33 +30,32 @@ from .claude import SYSTEM_TEMPLATE, FixOut, PageOut, Role, language_hint
 
 CONTEXT_LINES = 3
 EXAMPLE_TEX_CHARS = 2500
+LINE_CTX = 4096  # plenty for a batch of line crops; page mode keeps 16k
 
 
 class LineOut(BaseModel):
     role: Role
     latex: str
     continues_previous: bool
-    code_language: Optional[str]
+    code_language: Optional[str] = None
 
 
+class LinesOut(BaseModel):
+    lines: list[LineOut]
+
+
+# Kept short on purpose: it is re-read for every request.
 LINE_SYSTEM = """\
-You transcribe one handwritten line from a student's study notes into LaTeX.
+You transcribe handwritten lines from a student's notes into LaTeX. The image shows one line, or several lines numbered in red on the left and separated by grey rules, in reading order.
 
-Return JSON with:
-- role: one of heading, subheading, definition, theorem, lemma, proposition, corollary, proof, example, remark, note, equation, derivation, prose, list, code, pseudocode, diagram.
-  equation = a single displayed formula; derivation = one line of multi-line working; prose = ordinary text; diagram = a drawing.
-- latex: the line as LaTeX WITHOUT any surrounding environment (no \\begin{{...}}, no \\[ \\]).
-  Text roles: text with inline math in $...$. equation/derivation: math only, no $ signs; for derivation put & before the relation sign (=, \\le, \\Rightarrow). code: the code exactly. heading: the title text only. diagram: empty string.
-- continues_previous: true if this line continues the element of the previous line (same paragraph, derivation, list, definition, proof). Then use the same role as the previous line.
-- code_language: language for code lines, otherwise null.
+For each line return:
+- role: heading | subheading | definition | theorem | lemma | proposition | corollary | proof | example | remark | note | equation (one displayed formula) | derivation (one line of multi-line working) | prose | list | code | pseudocode | diagram
+- latex: the line as LaTeX with no environment around it. Text roles: maths inside $...$. equation/derivation: maths only, no $; derivation: & before the relation sign. diagram: "".
+- continues_previous: true if the line continues the previous line's element (same paragraph, list, derivation, proof); then use the same role.
 
-Rules:
-- Transcribe exactly what is written. Never fix, complete or add mathematics.
-- Drop labels the role already shows ("Def:", "Thm.", "Lemma", "Ex:", "Proof:"). If the statement is named ("Def (Homotopy):"), start latex with the name in brackets: [Homotopy] ...
-- Wrap anything you cannot read with confidence in \\unsure{{...}} (never put & or \\\\ inside it).
-
-Subject: {name}. {description}{language}
-Style rules:
+Rules: copy exactly what is written; never correct or add maths. Drop labels such as "Def:", "Thm.", "Ex:", "Proof:"; a named statement "Def (Homotopy):" starts with [Homotopy]. Wrap unreadable parts in \\unsure{{...}}.
+Subject: {name}.{language}
+Style:
 {style_rules}
 {examples}"""
 
@@ -95,8 +98,10 @@ class OllamaTranscriber:
         mode: Literal["line", "page"] | None = None,
         client: httpx.Client | None = None,
         check: bool = True,
+        batch: int | None = None,
     ):
         self.model = model or config.LOCAL_MODEL
+        self.batch = max(1, batch or config.LOCAL_BATCH)
         self.host = (host or config.OLLAMA_HOST).rstrip("/")
         self.mode = mode or config.LOCAL_MODE
         self.client = client or httpx.Client(timeout=httpx.Timeout(300.0, connect=5.0))
@@ -121,7 +126,9 @@ class OllamaTranscriber:
 
     # ---- requests ----------------------------------------------------------
 
-    def _chat(self, system: str, user: str, images: list[str], schema: dict, num_predict: int = 1024) -> tuple[str, dict]:
+    def _chat(
+        self, system: str, user: str, images: list[str], schema: dict, num_predict: int = 1024, num_ctx: int = 16384
+    ) -> tuple[str, dict]:
         message: dict = {"role": "user", "content": user}
         if images:
             message["images"] = images
@@ -131,7 +138,9 @@ class OllamaTranscriber:
             "format": schema,
             "stream": False,
             "keep_alive": "15m",
-            "options": {"temperature": 0, "num_ctx": 16384, "num_predict": num_predict},
+            # A smaller context window means a smaller memory reservation,
+            # which matters on a Mac that is already swapping.
+            "options": {"temperature": 0, "num_ctx": num_ctx, "num_predict": num_predict},
         }
         try:
             r = self.client.post(f"{self.host}/api/chat", json=payload)
@@ -147,12 +156,14 @@ class OllamaTranscriber:
         }
         return data["message"]["content"], stats
 
-    def _ask(self, model_cls: type[BaseModel], system: str, user: str, images: list[str], num_predict: int = 1024):
+    def _ask(
+        self, model_cls: type[BaseModel], system: str, user: str, images: list[str], num_predict: int = 1024, num_ctx: int = 16384
+    ):
         """Call with a JSON schema; one retry if the output does not validate."""
         last_err: Exception | None = None
         total = {"prompt_tokens": 0, "output_tokens": 0, "seconds": 0.0}
         for _ in range(2):
-            text, stats = self._chat(system, user, images, model_cls.model_json_schema(), num_predict)
+            text, stats = self._chat(system, user, images, model_cls.model_json_schema(), num_predict, num_ctx)
             for k in total:
                 total[k] += stats[k]
             try:
@@ -180,24 +191,62 @@ class OllamaTranscriber:
         warnings: list[str] = []
         usage = {"prompt_tokens": 0, "output_tokens": 0, "seconds": 0.0, "requests": 0}
         started = time.monotonic()
-        for i, bid in enumerate(page.block_ids):
-            context = "\n".join(f"[{b.role}] {b.latex}" for b in blocks[-CONTEXT_LINES:] if b.latex) or "(this is the first line of the page)"
-            user = f"Previous lines on this page:\n{context}\n\nTranscribe the handwritten line in the image."
-            try:
-                out, stats = self._ask(LineOut, system, user, [_b64(page.line(i), 1600)], num_predict=768)
-            except TranscriptionError as e:
-                if i == 0 and ("not running" in str(e) or "Could not reach" in str(e)):
-                    raise
-                warnings.append(f"line {bid}: {e}")
-                blocks.append(BlockIn(id=bid, role="prose", latex=""))
-                continue
-            for k in ("prompt_tokens", "output_tokens", "seconds"):
-                usage[k] += stats[k]
-            usage["requests"] += 1
-            continues = out.continues_previous and bool(blocks) and blocks[-1].role == out.role
-            blocks.append(BlockIn(id=bid, role=out.role, latex=out.latex, continues_previous=continues, code_language=out.code_language))
+        ids = page.block_ids
+        for start in range(0, len(ids), self.batch):
+            idx = list(range(start, min(start + self.batch, len(ids))))
+            outs = self._read_lines(page, idx, blocks, system, usage, warnings)
+            for i, out in zip(idx, outs):
+                if out is None:
+                    blocks.append(BlockIn(id=ids[i], role="prose", latex=""))
+                    continue
+                continues = out.continues_previous and bool(blocks) and blocks[-1].role == out.role
+                blocks.append(BlockIn(ids[i], out.role, out.latex, continues, out.code_language))
         usage["wall_seconds"] = round(time.monotonic() - started, 1)
         return PageTranscription(blocks=blocks, model=f"ollama:{self.model}", usage=usage, warnings=warnings)
+
+    def _read_lines(
+        self, page: PageInput, idx: list[int], done: list[BlockIn], system: str, usage: dict, warnings: list[str]
+    ) -> list[LineOut | None]:
+        """Transcribe consecutive lines in one request; fall back to one
+        request per line if the answer does not have one entry per image."""
+        context = "\n".join(f"[{b.role}] {b.latex}" for b in done[-CONTEXT_LINES:] if b.latex) or "(start of the page)"
+        n = len(idx)
+        if n > 1:
+            user = f"Previous lines:\n{context}\n\nThe image shows the next {n} lines, numbered 1-{n}. Return exactly {n} entries in \"lines\", in that order."
+            try:
+                strip = _b64(page.strip(idx), 1600)
+                out, stats = self._ask(LinesOut, system, user, [strip], num_predict=200 * n, num_ctx=LINE_CTX)
+                self._add(usage, stats)
+                if len(out.lines) == n:
+                    return list(out.lines)
+                warnings.append(f"lines {idx[0] + 1}-{idx[-1] + 1}: got {len(out.lines)} answers for {n} lines, retried one by one")
+            except TranscriptionError as e:
+                if "not running" in str(e) or "Could not reach" in str(e):
+                    raise
+                warnings.append(f"lines {idx[0] + 1}-{idx[-1] + 1}: {e}; retried one by one")
+        results: list[LineOut | None] = []
+        for i in idx:
+            img = _b64(page.line(i), 1600)
+            ctx = context if not results else "\n".join(f"[{r.role}] {r.latex}" for r in results[-CONTEXT_LINES:] if r)
+            user = f"Previous lines:\n{ctx or '(start of the page)'}\n\nThis image is the next line. Return exactly 1 entry in \"lines\"."
+            try:
+                out, stats = self._ask(LinesOut, system, user, [img], num_predict=300, num_ctx=LINE_CTX)
+                self._add(usage, stats)
+                results.append(out.lines[0] if out.lines else None)
+                if not out.lines:
+                    warnings.append(f"line {i + 1}: empty answer")
+            except TranscriptionError as e:
+                if "not running" in str(e) or "Could not reach" in str(e):
+                    raise
+                warnings.append(f"line {i + 1}: {e}")
+                results.append(None)
+        return results
+
+    @staticmethod
+    def _add(usage: dict, stats: dict) -> None:
+        for k in ("prompt_tokens", "output_tokens", "seconds"):
+            usage[k] += stats[k]
+        usage["requests"] += 1
 
     def _transcribe_whole_page(self, page: PageInput, subject: Subject) -> PageTranscription:
         system = SYSTEM_TEMPLATE.format(
