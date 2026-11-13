@@ -34,6 +34,7 @@ class Subject:
     preamble: str
     layout: str
     examples: list[Example] = field(default_factory=list)
+    language: str | None = None  # language the notes are written in
 
 
 def _example_images(path: Path, cache_dir: Path) -> list[Path]:
@@ -97,6 +98,7 @@ def load_subject(key: str) -> Subject:
         style_rules=meta.get("style_rules", "") or "",
         role_templates=meta.get("role_templates") or {},
         default_code_language=meta.get("default_code_language"),
+        language=meta.get("language"),
         preamble=preamble,
         layout=layout_path.read_text(),
         examples=_load_examples(key, folder / "examples"),

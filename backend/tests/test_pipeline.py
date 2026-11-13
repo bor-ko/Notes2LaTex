@@ -84,6 +84,8 @@ def test_build_reports_block_of_unfixable_error(isolated_env, tablet_pdf):
         bad = dataset.get_blocks(conn, page["id"])[2]
         dataset.update_block(conn, bad["id"], role="equation", latex=r"\nosuchmacro x")
     result = pipeline.build_document(doc_id)  # no fixer
-    assert not result.ok and result.pdf_path is None
+    # The document still builds; the bad block is shown as raw text and reported.
+    assert result.ok and result.pdf_path is not None
     assert result.errors[0].block_ids == [bad["id"]]
     assert result.errors[0].page_id == page["id"]
+    assert r"\brokenblock{\textbackslash{}nosuchmacro x}" in result.tex_path.read_text()

@@ -71,10 +71,19 @@ Accuracy rules:
 - If a box holds no real content (a stray mark), give role prose and an empty latex string.
 - Arrows, margin notes and small annotations belong to the line they sit next to.
 
-Subject: {name}. {description}
+Subject: {name}. {description}{language}
 Style rules for this subject:
 {style_rules}
 """
+
+
+def language_hint(subject: Subject) -> str:
+    if not subject.language:
+        return ""
+    return (
+        f"\nThe notes are written in {subject.language} (technical terms are sometimes in English). "
+        f"Transcribe words in that language with its accents and diacritics; do not translate."
+    )
 
 
 def has_credentials() -> bool:
@@ -101,6 +110,7 @@ def build_request(overlay: Image.Image, block_ids: list[int], subject: Subject) 
     system_text = SYSTEM_TEMPLATE.format(
         name=subject.name,
         description=subject.description,
+        language=language_hint(subject),
         style_rules=subject.style_rules.strip() or "- (none)",
     )
     system = [{"type": "text", "text": system_text}]

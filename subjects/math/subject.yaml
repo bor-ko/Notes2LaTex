@@ -1,5 +1,7 @@
 name: Math / Physics
 description: Lecture notes with definitions, theorems, lemmas, proofs, derivations and worked examples.
+# Language the notes are written in (helps the model read words; leave empty for English).
+language: Slovenian
 # The look of the output (boxes, labels, numbering) lives in preamble.tex.
 # The PDFs in examples/ without a matching .tex/.md are style references only;
 # they are not sent to the transcriber.

@@ -57,7 +57,9 @@ DEFAULT_TEMPLATES = {
 
 # Statements that can carry a name, e.g. \\begin{definition}[Homotopy].
 TITLED_ROLES = {"definition", "theorem", "lemma", "proposition", "corollary", "example", "remark", "note"}
-_TITLE = re.compile(r"^\s*\[([^\[\]]{1,80})\]\s*")
+# "[Homotopy] Let ..." names a statement; "[n] = {1, ..., n}" is maths.
+_TITLE = re.compile(r"^\s*\[((?=[^\[\]]*[A-Za-z\u00C0-\u017F]{3})[^\[\]$\\=^_{}]{3,80})\]\s*(?![=<>]|\$\s*[=<>])")
+_MANUAL_NUMBER = re.compile(r"^(?:\d+\.)+\d*\s|^\d+(?:\.\d+)*\.?\s*[A-Za-z\u00C0-\u017F]")
 
 # How the lines of one group are joined.
 JOINERS = {"derivation": " \\\\\n", "heading": " ", "subheading": " "}
@@ -194,6 +196,10 @@ def render_group(group: Group, subject: Subject) -> str:
         lines = _wrap_loose_items(lines)
     if group.role in ("heading", "subheading"):
         lines = [ln.strip() for ln in lines]
+        # Headings numbered by hand ("1.1. Functions") would get a second
+        # number from LaTeX; keep the author's and drop LaTeX's.
+        if _MANUAL_NUMBER.match(lines[0]) and group.role not in subject.role_templates:
+            template = template.replace("\\section{", "\\section*{").replace("\\subsection{", "\\subsection*{")
     title = ""
     if group.role in TITLED_ROLES:
         m = _TITLE.match(lines[0])
@@ -201,6 +207,9 @@ def render_group(group: Group, subject: Subject) -> str:
             title = f"[{m.group(1).strip()}]"
             lines[0] = lines[0][m.end():]
             lines = [ln for ln in lines if ln.strip()] or [""]
+    if not title and lines and lines[0].lstrip().startswith("[") and group.role in TITLED_ROLES | {"proof"}:
+        # LaTeX would read a leading "[n]" as the environment's optional name.
+        lines[0] = "{}" + lines[0].lstrip()
     body = JOINERS.get(group.role, "\n").join(lines)
     lang = next((b.code_language for b in group.blocks if b.code_language), None) or subject.default_code_language
     return _fill(template, {"body": body, "lang": _listings_option(lang), "title": title})

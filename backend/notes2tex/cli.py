@@ -32,6 +32,10 @@ def _print_build(result: pipeline.BuildResult) -> None:
         typer.echo(f"Auto-fixed {result.fixes} compile error(s).")
     if result.ok:
         typer.secho(f"PDF: {result.pdf_path}", fg="green")
+        if result.errors:
+            typer.secho(f"{len(result.errors)} block(s) did not compile and are shown as red raw text:", fg="yellow")
+            for e in result.errors:
+                typer.echo(f"  blocks {e.block_ids}: {e.message}")
     else:
         typer.secho("LaTeX did not compile:", fg="red")
         for e in result.errors:

@@ -116,6 +116,20 @@ export function DocumentView({ id, status, engine }: { id: number; status: Statu
         </div>
       )}
       {build?.ok && build.fixes > 0 && <div className="banner">Built after auto-fixing {build.fixes} compile error(s).</div>}
+      {build?.ok && build.errors.length > 0 && (
+        <div className="banner">
+          <b>Built, but {build.errors.length} block{build.errors.length > 1 ? "s" : ""} did not compile</b> and{" "}
+          {build.errors.length > 1 ? "are" : "is"} shown as red raw text in the PDF:
+          <ul className="errors">
+            {build.errors.map((e, i) => (
+              <li key={i}>
+                {e.message}{" "}
+                {e.page_id && <a href={`#/page/${e.page_id}?block=${e.block_ids[0] ?? ""}`}>fix →</a>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="card">
         <h2>Pages</h2>

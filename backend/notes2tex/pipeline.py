@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 from . import config, dataset
-from .assemble import Assembled, BlockIn, Group, assemble_document, group_blocks
+from .assemble import Assembled, BlockIn, Group, assemble_document, escape_text, group_blocks
 from .compile import compile_tex
 from .ingest import ingest
 from .segment import Box, crop, segment
@@ -225,7 +225,9 @@ class BuildResult:
     log: str = ""
 
 
-def _assemble(doc: dict, draft: bool) -> tuple[Assembled, list[dict], Path]:
+def _assemble(doc: dict, draft: bool, broken: set[int] | frozenset[int] = frozenset()) -> tuple[Assembled, list[dict], Path]:
+    """`broken` blocks are rendered as raw text, so one bad line cannot stop
+    the whole document from compiling."""
     subject = load_subject(doc["subject"])
     out = output_dir(doc)
     figs = out / "figures"
@@ -237,7 +239,9 @@ def _assemble(doc: dict, draft: bool) -> tuple[Assembled, list[dict], Path]:
             by_id = {r["id"]: r for r in rows}
             groups = group_blocks(
                 [
-                    BlockIn(r["id"], r["role"], r["latex"] or "", bool(r["continues_previous"]), r["code_language"])
+                    BlockIn(r["id"], "prose", f"\\brokenblock{{{escape_text(r['latex'] or '')}}}")
+                    if r["id"] in broken
+                    else BlockIn(r["id"], r["role"], r["latex"] or "", bool(r["continues_previous"]), r["code_language"])
                     for r in rows
                 ]
             )
@@ -256,15 +260,23 @@ def _assemble(doc: dict, draft: bool) -> tuple[Assembled, list[dict], Path]:
     return assemble_document(page_groups, subject, doc["name"], draft=draft), pages, out
 
 
-def build_document(doc_id: int, draft: bool = True, fixer: Transcriber | None = None, max_fixes: int = 3) -> BuildResult:
+def build_document(
+    doc_id: int, draft: bool = True, fixer: Transcriber | None = None, max_fixes: int = 5, max_fallbacks: int = 60
+) -> BuildResult:
+    """Assemble and compile. A block that breaks compilation is first sent to
+    `fixer` (once per block, up to `max_fixes`); if it still breaks, it is
+    shown as raw text in the PDF and reported, so the rest still builds."""
     with dataset.connect() as conn:
         doc = dataset.get_document(conn, doc_id)
     if doc is None:
         raise KeyError(f"No document {doc_id}")
     subject = load_subject(doc["subject"])
     fixes = 0
+    tried: set[tuple[int, ...]] = set()
+    broken: set[int] = set()
+    shown_raw: list[BuildError] = []
     while True:
-        assembled, pages, out = _assemble(doc, draft)
+        assembled, pages, out = _assemble(doc, draft, broken)
         out.mkdir(parents=True, exist_ok=True)
         tex_path = out / f"{slugify(doc['name'])}.tex"
         tex_path.write_text(assembled.tex)
@@ -281,20 +293,28 @@ def build_document(doc_id: int, draft: bool = True, fixer: Transcriber | None = 
                     block_ids=span.block_ids if span else [],
                 )
             )
-        if result.ok or fixer is None or fixes >= max_fixes:
+        if result.ok:
             break
         target = next((e for e in errors if e.block_ids), None)
         if target is None:
+            break  # an error outside the notes (preamble, missing package)
+        key = tuple(target.block_ids)
+        if fixer is not None and fixes < max_fixes and key not in tried:
+            tried.add(key)
+            with dataset.connect() as conn:
+                rows = [dataset.get_block(conn, i) for i in target.block_ids]
+            old = [r["latex"] for r in rows]
+            context = lines[target.line - 1] if target.line and target.line <= len(lines) else ""
+            new = fixer.fix_latex(old, rows[0]["role"], f"{target.message} (at: {context.strip()})", subject)
+            if new != old:
+                with dataset.connect() as conn:
+                    for r, latex in zip(rows, new):
+                        dataset.apply_autofix(conn, r["id"], latex)
+                fixes += 1
+                continue
+        if set(target.block_ids) <= broken or len(broken) >= max_fallbacks:
             break
-        with dataset.connect() as conn:
-            rows = [dataset.get_block(conn, i) for i in target.block_ids]
-        old = [r["latex"] for r in rows]
-        context = lines[target.line - 1] if target.line and target.line <= len(lines) else ""
-        new = fixer.fix_latex(old, rows[0]["role"], f"{target.message} (at: {context.strip()})", subject)
-        if new == old:
-            break
-        with dataset.connect() as conn:
-            for r, latex in zip(rows, new):
-                dataset.apply_autofix(conn, r["id"], latex)
-        fixes += 1
-    return BuildResult(result.ok, tex_path, result.pdf_path if result.ok else None, errors, fixes, result.log)
+        broken.update(target.block_ids)
+        shown_raw.append(target)
+    reported = shown_raw if result.ok else errors + shown_raw
+    return BuildResult(result.ok, tex_path, result.pdf_path if result.ok else None, reported, fixes, result.log)

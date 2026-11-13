@@ -22,7 +22,7 @@ from .. import config
 from ..assemble import BlockIn
 from ..subjects import Subject
 from .base import PageInput, PageTranscription, TranscriptionError
-from .claude import SYSTEM_TEMPLATE, FixOut, PageOut, Role
+from .claude import SYSTEM_TEMPLATE, FixOut, PageOut, Role, language_hint
 
 CONTEXT_LINES = 3
 EXAMPLE_TEX_CHARS = 2500
@@ -51,7 +51,7 @@ Rules:
 - Drop labels the role already shows ("Def:", "Thm.", "Lemma", "Ex:", "Proof:"). If the statement is named ("Def (Homotopy):"), start latex with the name in brackets: [Homotopy] ...
 - Wrap anything you cannot read with confidence in \\unsure{{...}} (never put & or \\\\ inside it).
 
-Subject: {name}. {description}
+Subject: {name}. {description}{language}
 Style rules:
 {style_rules}
 {examples}"""
@@ -167,6 +167,7 @@ class OllamaTranscriber:
         return template.format(
             name=subject.name,
             description=subject.description,
+            language=language_hint(subject),
             style_rules=subject.style_rules.strip() or "- (none)",
             examples=_example_notes(subject),
         )
@@ -200,7 +201,10 @@ class OllamaTranscriber:
 
     def _transcribe_whole_page(self, page: PageInput, subject: Subject) -> PageTranscription:
         system = SYSTEM_TEMPLATE.format(
-            name=subject.name, description=subject.description, style_rules=subject.style_rules.strip() or "- (none)"
+            name=subject.name,
+            description=subject.description,
+            language=language_hint(subject),
+            style_rules=subject.style_rules.strip() or "- (none)",
         ) + _example_notes(subject)
         ids = page.block_ids
         user = f"Transcribe this page. It has {len(ids)} numbered boxes: {', '.join(map(str, ids))}."

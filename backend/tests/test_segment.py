@@ -62,3 +62,19 @@ def test_clean_page_has_no_grid_left_outside_the_writing(tmp_path, colour):
     for b in segment(cv2.imread(str(page.mask_path), cv2.IMREAD_GRAYSCALE)):
         outside[b.y0 : b.y1, b.x0 : b.x1] = False
     assert int(((gray < 250) & outside).sum()) == 0  # crossings of grid lines are gone too
+
+
+@pytest.mark.parametrize("paper", ["grid", "lined", "blank"])
+def test_dark_paper_like_noteful(tmp_path, paper):
+    pdf = make_page(tmp_path / "n.pdf", paper=paper, dark=True)
+    page = ingest(pdf, tmp_path / "pages")[0]
+    mask = cv2.imread(str(page.mask_path), cv2.IMREAD_GRAYSCALE) > 0
+    boxes = segment(mask.astype(np.uint8) * 255)
+    assert len(boxes) == EXPECTED_LINES
+    assert mask.mean() < 0.05  # the dark paper is not "ink"
+    # highlighter band around "Kinematics" is paper, only the letters are ink
+    band = mask[192:274, 132:518]
+    assert band.mean() < 0.35
+    clean = cv2.cvtColor(cv2.imread(str(page.image_path)), cv2.COLOR_BGR2GRAY)
+    assert np.median(clean) == 255  # white page
+    assert np.percentile(clean[mask], 50) < 100  # light pen became dark ink

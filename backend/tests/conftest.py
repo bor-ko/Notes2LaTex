@@ -32,12 +32,17 @@ def _font(size: int) -> ImageFont.ImageFont:
     return ImageFont.load_default(size)
 
 
-def make_page(path: Path, lined: bool = True, paper: str | None = None, line_colour=(160, 190, 230)) -> Path:
-    """paper: "lined", "grid" or "blank" (default: lined if `lined` else blank)."""
+def make_page(path: Path, lined: bool = True, paper: str | None = None, line_colour=(160, 190, 230), dark: bool = False) -> Path:
+    """paper: "lined", "grid" or "blank" (default: lined if `lined` else blank).
+    dark=True mimics Noteful's dark paper: dark grey page, slightly lighter
+    grid, light ink and a translucent highlighter band behind the heading."""
     paper = paper or ("lined" if lined else "blank")
     w, h = 1654, 2339  # A4 at 200 DPI
-    img = Image.new("RGB", (w, h), "white")
+    img = Image.new("RGB", (w, h), (50, 50, 50) if dark else "white")
     d = ImageDraw.Draw(img)
+    if dark:
+        line_colour = (68, 68, 68)
+        d.rectangle((130, 190, 520, 275), fill=(78, 48, 96))  # highlighter behind "Kinematics"
     if paper in ("lined", "grid"):
         step = 90 if paper == "lined" else 60
         for y in range(180, h - 100, step):
@@ -47,13 +52,15 @@ def make_page(path: Path, lined: bool = True, paper: str | None = None, line_col
             d.line((x, 120, x, h - 100), fill=line_colour, width=2)
     font = _font(56)
     y = 200
+    light = {(20, 30, 120): (235, 235, 235), (190, 20, 20): (240, 150, 60)}  # white pen, orange pen
+    ink = (lambda c: light.get(c, c)) if dark else (lambda c: c)
     for text, colour in LINES:
-        d.text((150, y), text, fill=colour, font=font)
+        d.text((150, y), text, fill=ink(colour), font=font)
         y += 180
     # A stacked fraction: numerator, bar, denominator close together.
-    d.text((400, y), "x + 1", fill=(20, 30, 120), font=font)
-    d.line((380, y + 78, 620, y + 78), fill=(20, 30, 120), width=5)
-    d.text((440, y + 88), "2y", fill=(20, 30, 120), font=font)
+    d.text((400, y), "x + 1", fill=ink((20, 30, 120)), font=font)
+    d.line((380, y + 78, 620, y + 78), fill=ink((20, 30, 120)), width=5)
+    d.text((440, y + 88), "2y", fill=ink((20, 30, 120)), font=font)
     img.save(path, "PDF", resolution=200)
     return path
 

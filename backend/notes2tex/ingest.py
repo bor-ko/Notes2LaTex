@@ -76,24 +76,61 @@ def template_lines(mask: np.ndarray) -> np.ndarray:
     return cv2.bitwise_or(_long_thin(mask, int(w * 0.6), True), _long_thin(mask, int(h * 0.6), False))
 
 
+INK_DISTANCE = 40  # colour difference from the surrounding paper that counts as ink
+LINE_DISTANCE = 12  # faint enough for pale template lines
+# Template lines are faint (difference ~30-45 on Noteful grids) while pen ink is
+# strong (~70+). Pixels on a template line above this are pen and are kept, so
+# a stroke that happens to lie exactly on a grid line survives.
+LINE_MAX_DISTANCE = 60
+
+
+def paper_background(bgr: np.ndarray) -> np.ndarray:
+    """The paper colour around every pixel: a wide median filter, so thin pen
+    strokes vanish but large areas (the paper, highlighter bands) remain."""
+    h, w = bgr.shape[:2]
+    small = cv2.resize(bgr, (max(1, w // 4), max(1, h // 4)), interpolation=cv2.INTER_AREA)
+    return cv2.resize(cv2.medianBlur(small, 13), (w, h), interpolation=cv2.INTER_LINEAR)
+
+
+def is_dark_paper(bgr: np.ndarray) -> bool:
+    return float(np.median(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY))) < 110
+
+
+def _distance(bgr: np.ndarray, bg: np.ndarray) -> np.ndarray:
+    a = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+    b = cv2.cvtColor(bg, cv2.COLOR_BGR2LAB).astype(np.float32)
+    return np.sqrt(((a - b) ** 2).sum(axis=2))
+
+
 def ink_mask(bgr: np.ndarray) -> np.ndarray:
-    """Binary mask of pen ink (255) vs. paper (0), with template lines removed."""
-    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-    sat = hsv[:, :, 1]
+    """Binary mask of pen ink (255) vs. paper (0), with template lines removed.
 
-    # Ink is either dark, or a saturated pen colour that is not pale.
-    dark = gray < 170
-    coloured = (sat > 90) & (gray < 215)
-    mask = ((dark | coloured).astype(np.uint8)) * 255
+    Ink is whatever stands out from the paper around it. That works for white
+    and dark (night-mode) paper alike, for every pen colour, and treats
+    highlighter bands as paper while keeping the writing on top of them.
+    """
+    dist = _distance(bgr, paper_background(bgr))
+    # The outermost pixels of a rendered page are anti-aliased page edge, not ink.
+    b = 3
+    dist[:b], dist[-b:], dist[:, :b], dist[:, -b:] = 0, 0, 0, 0
+    mask = ((dist > INK_DISTANCE).astype(np.uint8)) * 255
 
-    mask = cv2.subtract(mask, template_lines(mask))
+    # Template lines are found where they are continuous: in the faint mask.
+    # In the ink mask a line that is just about as strong as the threshold
+    # shows up only in patches, too short to look like a line.
+    loose = ((dist > LINE_DISTANCE).astype(np.uint8)) * 255
+    faint_lines = template_lines(loose)
+    # How strong this page's template lines are (most of their pixels are
+    # plain line, not crossings with ink); pen is clearly stronger.
+    line_px = dist[faint_lines > 0]
+    limit = max(LINE_MAX_DISTANCE, 1.4 * float(np.median(line_px))) if line_px.size else LINE_MAX_DISTANCE
+    weak = ((dist < limit).astype(np.uint8)) * 255
+    on_template = cv2.bitwise_and(cv2.bitwise_or(template_lines(mask), faint_lines), weak)
+    mask = cv2.subtract(mask, on_template)
 
-    # Where to find the paper's lines, even pale ones that never counted as ink.
-    # Their crossings can be dark enough to pass as ink: tiny specks sitting on
-    # these lines are template, not writing.
-    loose = (((gray < 235) | (sat > 30)).astype(np.uint8)) * 255
-    paper_lines = cv2.dilate(template_lines(loose), cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
+    # Tiny specks sitting on the paper's lines (e.g. where grid lines cross)
+    # are template, not writing.
+    paper_lines = cv2.dilate(faint_lines, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
 
     n, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
     area = stats[:, cv2.CC_STAT_AREA]
@@ -104,7 +141,16 @@ def ink_mask(bgr: np.ndarray) -> np.ndarray:
 
 
 def clean_page(bgr: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """White page with only the ink kept, in its original colours."""
+    """White page with only the ink kept, in its colours.
+
+    On dark paper the ink is light, so its lightness is flipped (hue kept):
+    white pen becomes black, orange stays orange but darker. Models, crops
+    and figures then always see dark ink on white paper.
+    """
+    if is_dark_paper(bgr):
+        lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+        lab[:, :, 0] = 255 - lab[:, :, 0]
+        bgr = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
     # Grow the mask slightly so anti-aliased stroke edges survive.
     grown = cv2.dilate(mask, np.ones((3, 3), np.uint8))
     out = np.full_like(bgr, 255)

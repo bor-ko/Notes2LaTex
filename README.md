@@ -29,21 +29,21 @@ Pick an engine with `--engine ollama|claude|offline` (CLI) or the **Engine** men
 
 The local engine reads **one line at a time** (small models are much more reliable on a single line than a whole page) and gets the previous lines as context. `NOTES2TEX_LOCAL_MODE=page` sends the whole page instead, `NOTES2TEX_LOCAL_MODEL` picks another Ollama model, and `NOTES2TEX_ENGINE` changes the default engine.
 
-Every engine's output goes through a deterministic tidy-up (`backend/notes2tex/tidy.py`) before you see it. It strips handwritten labels like "Def:" and "Bewijs." (keeping a name, so "Def (Homotopy):" becomes `\begin{definition}[Homotopy]`), wraps pure-math lines in `$...$`, and removes stray display delimiters.
+Every engine's output goes through a deterministic tidy-up (`backend/notes2tex/tidy.py`) before you see it. It repairs backslashes a model forgot to escape (`\to` arriving as a tab), fixes garbled č/š/ž, strips handwritten labels like "Def:", "Primer" or "Dokaz" (keeping a name, so "Def (Homotopy):" becomes `\begin{definition}[Homotopy]`), wraps the maths in text lines in `$...$`, removes stray display delimiters, and drops TeX commands that have no place in a transcription (`\def`, `\input`, `\write`, …).
 
 ## How a page flows
 
-1. **Ingest**: PDF pages are rendered at 200 DPI. Lined and grid paper templates are removed; coloured ink is kept.
+1. **Ingest**: PDF pages are rendered at 200 DPI. Ink is whatever stands out from the paper around it, so white *and* dark (night-mode) paper work, every pen colour is kept, and highlighter bands count as paper. Lined/grid templates are removed. Dark pages are flipped to dark ink on white (colours kept) before anything else sees them.
 2. **Segment**: each written line becomes a block. Fractions and exponents stay with their line.
 3. **Transcribe**: for each line, the engine returns a role (heading, definition, theorem, lemma, proof, derivation, code…), the LaTeX, and whether the line continues the one above.
 4. **Review**: in the web app you fix the LaTeX, the role, or the segmentation (split/merge), then **Approve**. Approved lines become (image, LaTeX) training pairs.
-5. **Build**: blocks are grouped and rendered with the subject's templates, then compiled with tectonic. If the compile fails, the selected engine tries to fix the offending block (up to 3 times); anything left is linked to its block in the review screen.
+5. **Build**: blocks are grouped and rendered with the subject's templates, then compiled with tectonic. If a block breaks compilation, the selected engine tries to fix it once; if it still breaks, it is shown in the PDF as red raw text (so the rest of the document always builds) and linked to its block in the review screen.
 
 ## Subjects and your examples
 
 Each folder in `subjects/` is a subject:
 
-- `subject.yaml`: plain-language **style rules** (these go straight into the prompt) and optional `role_templates` that override how a role becomes LaTeX.
+- `subject.yaml`: the notes' `language` (e.g. `Slovenian`: helps the model read words and keep č/š/ž), plain-language **style rules** (these go straight into the prompt) and optional `role_templates` that override how a role becomes LaTeX.
 - `preamble.tex`: packages, macros and the **look** of the statements (definition, theorem, lemma, … boxes). The math preamble follows the style of the reference PDFs in `subjects/math/examples/`: inline sans-serif labels ("**Definition 1** (Homotopy).") in tinted boxes with a coloured bar. Uncomment `\notesframedtrue` at its top for plain framed boxes. `subjects/_base/` holds the shared preamble and layout.
 - `examples/`: your reference pages. Put a page export next to the LaTeX you want for it, with the same name:
   ```

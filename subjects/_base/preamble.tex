@@ -1,7 +1,13 @@
 % Shared by every subject. Subject preambles are appended after this.
 \usepackage[margin=2.2cm]{geometry}
-\usepackage[T1]{fontenc}
-\usepackage{lmodern}
+% tectonic runs XeTeX: Unicode fonts so č, š, ž, ... print. pdfLaTeX (e.g. Overleaf) gets the classic setup.
+\usepackage{iftex}
+\ifXeTeX
+  \usepackage{fontspec}
+\else
+  \usepackage[T1]{fontenc}
+  \usepackage{lmodern}
+\fi
 \usepackage{microtype}
 \usepackage{xcolor}
 \usepackage{graphicx}
@@ -20,6 +26,8 @@
 % plain in final builds. Works in text and math mode.
 \newif\ifnotesdraft
 \newcommand{\unsure}[1]{\ifnotesdraft{\color{orange!85!black}#1}\else#1\fi}
+% A line whose LaTeX did not compile, shown as raw text so it can be fixed.
+\newcommand{\brokenblock}[1]{{\ttfamily\small\color{red!70!black}#1}}
 
 % Each subject preamble defines the statement environments:
 % definition theorem lemma proposition corollary example remark note proof
