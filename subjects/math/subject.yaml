@@ -1,0 +1,22 @@
+name: Math / Physics
+description: Lecture notes with definitions, theorems, lemmas, proofs, derivations and worked examples.
+# The look of the output (boxes, labels, numbering) lives in preamble.tex.
+# The PDFs in examples/ without a matching .tex/.md are style references only;
+# they are not sent to the transcriber.
+
+# Plain-language rules sent to the transcriber. Edit freely: this is where
+# your example files turn into conventions.
+style_rules: |
+  - Vectors are written \vec{v}. Unit vectors are \hat{x}.
+  - Differentials use \dd, e.g. \frac{\dd x}{\dd t}. Partial derivatives use \partial.
+  - Physical quantities with units use siunitx: \qty{9.81}{\m\per\s\squared}.
+  - Multi-line working (one equals sign per line) is a "derivation"; put & before the relation symbol on each line.
+  - Write sets with \mathbb{R}, \mathbb{N}, \mathbb{Z}, \mathbb{C}.
+  - Maps are written f : X \to Y; elementwise x \mapsto f(x).
+  - Bullet points inside a definition, theorem or proof are \item lines (they are wrapped in a list automatically).
+  - Use \cdot for multiplication only where it is written by hand.
+  - Keep the author's own variable names and notation exactly as written.
+
+# Optional: override how a role is turned into LaTeX. Placeholders:
+# <<body>>, <<lang>>, <<image>>. Omitted roles use the built-in defaults.
+role_templates: {}

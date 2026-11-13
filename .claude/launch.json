@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "notes2tex",
+      "runtimeExecutable": ".venv/bin/notes2tex",
+      "runtimeArgs": ["serve", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+name: Computer Science
+description: Notes on algorithms, data structures and programming, with code and pseudocode.
+
+style_rules: |
+  - Real code (a specific programming language) is role "code". Keep indentation exactly; use spaces.
+  - Language-agnostic algorithm steps are role "pseudocode": one \State, \If{...}, \EndIf, \For{...}, \EndFor, \While{...}, \EndWhile, \Return per line (algpseudocode syntax).
+  - Inline code identifiers in prose are \texttt{...}.
+  - Complexity uses \mathcal{O}(n \log n), \Theta(n), \Omega(n).
+  - When the language of a code block is not obvious, assume the default language.
+
+default_code_language: Python
+
+role_templates: {}

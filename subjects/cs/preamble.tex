@@ -1,0 +1,29 @@
+% Computer Science
+\usepackage{algorithm}
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!60!black}\bfseries,
+  commentstyle=\color{green!40!black}\itshape,
+  stringstyle=\color{red!60!black},
+  numbers=left, numberstyle=\tiny\color{gray},
+  frame=single, rulecolor=\color{gray!40},
+  backgroundcolor=\color{gray!4},
+  breaklines=true, showstringspaces=false, tabsize=4,
+  columns=fullflexible, keepspaces=true
+}
+
+% Statement boxes with a title bar. Optional name: \begin{definition}[Big-O]
+% #1 environment, #2 label, #3 colour
+\newcommand{\csbox}[3]{%
+  \newtcolorbox{#1}[1][]{breakable, colback=#3!4, colframe=#3!50!black,
+    fonttitle=\bfseries, boxrule=0.6pt, arc=2pt,
+    title={#2\if\relax\detokenize{##1}\relax\else\ (##1)\fi}}}
+\csbox{definition}{Definition}{blue}
+\csbox{theorem}{Theorem}{red}
+\csbox{lemma}{Lemma}{red}
+\csbox{proposition}{Proposition}{red}
+\csbox{corollary}{Corollary}{red}
+\csbox{example}{Example}{green}
+\csbox{remark}{Remark}{gray}
+\csbox{note}{Note}{orange}
+\newenvironment{proof}{\par\noindent\textit{Proof.}\ }{\hfill$\square$\par}

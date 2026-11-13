@@ -1,0 +1,25 @@
+% Shared by every subject. Subject preambles are appended after this.
+\usepackage[margin=2.2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage[most]{tcolorbox}
+\usepackage{listings}
+\usepackage{algpseudocode}
+\lstset{basicstyle=\ttfamily\small, frame=single, breaklines=true, columns=fullflexible, keepspaces=true}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue!50!black}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.6em}
+
+% Readings the transcriber was unsure about. Coloured in draft builds,
+% plain in final builds. Works in text and math mode.
+\newif\ifnotesdraft
+\newcommand{\unsure}[1]{\ifnotesdraft{\color{orange!85!black}#1}\else#1\fi}
+
+% Each subject preamble defines the statement environments:
+% definition theorem lemma proposition corollary example remark note proof

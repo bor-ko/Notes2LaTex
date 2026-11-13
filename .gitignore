@@ -1,0 +1,19 @@
+.venv
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.env
+data/
+output/
+ml/checkpoints/
+ml/datasets/
+frontend/node_modules/
+frontend/dist/
+.DS_Store
+.venv.nosync/
+# Example/style PDFs: third-party or personal notes, and large. Keep the
+# matching .tex/.md targets in git, not the PDFs.
+subjects/*/examples/*.pdf
+subjects/*/examples/*.png
+subjects/*/examples/*.jpg

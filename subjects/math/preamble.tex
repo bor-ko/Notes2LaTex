@@ -1,0 +1,66 @@
+% Math / Physics
+% Look: numbered statements with an inline sans-serif label,
+%   "Definition 3 (Homotopy). Let f, g : X -> Y be ..."
+% in tinted boxes with a coloured bar on the left.
+\newif\ifnotesframed
+% For plain framed boxes instead, uncomment the next line.
+% \notesframedtrue
+\usepackage{amsthm}
+\usepackage{thmtools}
+\usepackage{siunitx}
+\usepackage{bm}
+
+\newcommand{\dd}{\mathop{}\!\mathrm{d}}
+\renewcommand{\vec}[1]{\bm{#1}}
+\DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\im}{im}
+\DeclareMathOperator{\id}{id}
+
+\definecolor{notesdef}{RGB}{38,128,82}
+\definecolor{notesthm}{RGB}{150,78,36}
+\definecolor{notesex}{RGB}{52,84,150}
+\definecolor{notesrem}{RGB}{100,100,100}
+\colorlet{notesproof}{notesthm!45}
+
+% #1 style name, #2 colour of the label, #3 space around it (boxed
+% statements get their spacing from the box instead)
+\newcommand{\notesstyle}[3]{%
+  \declaretheoremstyle[headfont=\sffamily\bfseries\color{#2}, notefont=\sffamily\mdseries\color{#2},
+    notebraces={(}{)}, bodyfont=\normalfont, headpunct={.}, postheadspace=0.5em,
+    spaceabove=#3, spacebelow=#3]{#1}}
+\notesstyle{notesdefstyle}{notesdef}{0pt}
+\notesstyle{notesthmstyle}{notesthm}{0pt}
+\notesstyle{notesexstyle}{notesex}{8pt}
+\notesstyle{notesremstyle}{notesrem}{8pt}
+
+\declaretheorem[style=notesdefstyle, name=Definition]{definition}
+\declaretheorem[style=notesthmstyle, name=Theorem]{theorem}
+\declaretheorem[style=notesthmstyle, name=Lemma, sibling=theorem]{lemma}
+\declaretheorem[style=notesthmstyle, name=Proposition, sibling=theorem]{proposition}
+\declaretheorem[style=notesthmstyle, name=Corollary, sibling=theorem]{corollary}
+\declaretheorem[style=notesexstyle, name=Example, numbered=no]{example}
+\declaretheorem[style=notesremstyle, name=Remark, numbered=no]{remark}
+\declaretheorem[style=notesremstyle, name=Note, numbered=no]{note}
+
+\renewenvironment{proof}[1][\proofname]%
+  {\par\noindent{\sffamily\bfseries\color{notesthm}#1.}\ }%
+  {\hfill$\square$\par}
+
+% Put each statement in a box. #1 environment, #2 colour
+\newcommand{\notesbox}[2]{%
+  \ifnotesframed
+    \tcolorboxenvironment{#1}{breakable, colback=white, colframe=black!60,
+      boxrule=0.5pt, sharp corners, left=6pt, right=6pt, top=4pt, bottom=4pt,
+      before skip=10pt, after skip=10pt}%
+  \else
+    \tcolorboxenvironment{#1}{enhanced, breakable, frame hidden, sharp corners,
+      colback=#2!7, borderline west={2pt}{0pt}{#2},
+      left=8pt, right=6pt, top=5pt, bottom=5pt, before skip=10pt, after skip=10pt}%
+  \fi}
+\notesbox{definition}{notesdef}
+\notesbox{theorem}{notesthm}
+\notesbox{lemma}{notesthm}
+\notesbox{proposition}{notesthm}
+\notesbox{corollary}{notesthm}
+\notesbox{proof}{notesproof}
+\notesbox{note}{notesrem}
